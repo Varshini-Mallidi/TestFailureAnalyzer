@@ -1,0 +1,96 @@
+# azure-pipelines.yml
+# Drop this in your repo root alongside your existing pipeline.
+# It adds the AI failure analysis step after your VSTest run.
+
+trigger:
+  - main
+  - feature/*
+
+pool:
+  vmImage: 'windows-latest'
+
+variables:
+  buildConfiguration: 'Release'
+  # Set these in ADO Pipeline > Edit > Variables (mark ApiKey as secret)
+  AZUREOPENAI__ENDPOINT: 'https://YOUR-RESOURCE.openai.azure.com/'
+  AZUREOPENAI__DEPLOYMENTNAME: 'gpt-4o'
+  # AZUREOPENAI__APIKEY is set as a secret pipeline variable — do NOT hardcode it here
+
+steps:
+
+# ── 1. Restore & build your solution ────────────────────────────────────────
+- task: DotNetCoreCLI@2
+  displayName: 'Restore & build'
+  inputs:
+    command: 'build'
+    projects: '**/*.sln'
+    arguments: '--configuration $(buildConfiguration)'
+
+# ── 2. Run your MSTest + FlaUI tests ────────────────────────────────────────
+- task: VSTest@2
+  displayName: 'Run UI automation tests'
+  inputs:
+    testSelector: 'testAssemblies'
+    testAssemblyVer2: |
+      **\*Tests*.dll
+      !**\*TestAdapter.dll
+      !**\obj\**
+    searchFolder: '$(System.DefaultWorkingDirectory)'
+    runSettingsFile: '$(System.DefaultWorkingDirectory)/test.runsettings'
+    codeCoverageEnabled: false
+    # Write TRX to a known location
+    resultsFolder: '$(Agent.TempDirectory)/TestResults'
+    otherConsoleOptions: '/logger:trx;LogFileName=results.trx'
+  # IMPORTANT: Always continue to analysis even when tests fail
+  continueOnError: true
+
+# ── 3. Build the FailureAnalyzer tool ───────────────────────────────────────
+- task: DotNetCoreCLI@2
+  displayName: 'Build FailureAnalyzer'
+  inputs:
+    command: 'publish'
+    projects: 'FailureAnalyzer/FailureAnalyzer.csproj'
+    arguments: '--configuration Release --output $(Agent.TempDirectory)/analyzer'
+    publishWebProjects: false
+
+# ── 4. Run AI failure analysis ───────────────────────────────────────────────
+- task: CmdLine@2
+  displayName: 'AI failure analysis'
+  inputs:
+    script: |
+      dotnet $(Agent.TempDirectory)/analyzer/FailureAnalyzer.dll ^
+        --trx "$(Agent.TempDirectory)/TestResults/results.trx" ^
+        --logs "$(Agent.TempDirectory)/TestResults" ^
+        --output "$(Build.ArtifactStagingDirectory)/failure-report.html" ^
+        --env "Azure DevOps CI — $(Build.DefinitionName) #$(Build.BuildNumber)" ^
+        --context "Branch: $(Build.SourceBranchName), Commit: $(Build.SourceVersion)"
+  env:
+    # Inject secret API key as environment variable (overrides appsettings.json)
+    AZUREOPENAI__APIKEY: $(AZUREOPENAI_API_KEY)
+    AZUREOPENAI__ENDPOINT: $(AZUREOPENAI__ENDPOINT)
+    AZUREOPENAI__DEPLOYMENTNAME: $(AZUREOPENAI__DEPLOYMENTNAME)
+  # Don't fail the pipeline just because the analyzer errored
+  continueOnError: true
+
+# ── 5. Publish TRX results (standard ADO test tab) ───────────────────────────
+- task: PublishTestResults@2
+  displayName: 'Publish TRX to ADO Tests tab'
+  inputs:
+    testResultsFormat: 'VSTest'
+    testResultsFiles: '$(Agent.TempDirectory)/TestResults/*.trx'
+    failTaskOnFailedTests: false
+  condition: always()
+
+# ── 6. Publish HTML + Markdown report as pipeline artifact ───────────────────
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish AI failure report'
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: 'failure-analysis'
+    publishLocation: 'Container'
+  condition: always()
+
+# ── Result ────────────────────────────────────────────────────────────────────
+# After the pipeline runs, engineers find the HTML report under:
+# Pipeline run > Artifacts > failure-analysis > failure-report.html
+# Open it in browser for the full AI-powered analysis.

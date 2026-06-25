@@ -1,0 +1,26 @@
+1. Visual Studio / .NET Standard Build Output
+
+bin/
+obj/
+
+2. Test Artifacts and Local Logs
+
+*.trx
+*.txt
+*.log
+
+3. Generated AI Reports (Ignore all HTML/MD, but keep the README)
+
+*.html
+*.md
+!README.md
+report_log
+
+4. Visual Studio / System Temp Files
+
+*.TMP
+~.TMP
+
+5. RAG Database Cache
+
+vector_store.json
