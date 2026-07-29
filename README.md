@@ -6,7 +6,7 @@ Automatically investigates failed test runs by combining **TRX parsing**, **log 
 
 ---
 
-## 🎯 Problem Statement
+## Problem Statement
 
 When a CI pipeline fails, engineers spend time:
 - Opening TRX results and searching through logs
@@ -19,7 +19,7 @@ When a CI pipeline fails, engineers spend time:
 
 ---
 
-## ✨ Key Features
+## Key Features
 
 - **TRX Parsing** - Extract failed tests, error messages, stack traces, and metadata
 - **Evidence Collection** - Attach relevant logs and screenshots to each failure
@@ -34,7 +34,7 @@ When a CI pipeline fails, engineers spend time:
 
 ---
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 - **Language:** C# / .NET 8
 - **Test Framework:** MSTest + FlaUI (Windows UI Automation)
@@ -44,7 +44,7 @@ When a CI pipeline fails, engineers spend time:
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - .NET 8.0 SDK
@@ -90,7 +90,7 @@ Open `report.html` in your browser to see:
 
 ---
 
-## 📖 Usage Examples
+##  Usage Examples
 
 ### Basic Analysis
 ```bash
@@ -142,7 +142,7 @@ This auto-fetches the latest pipeline results and generates a report.
 
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```
 FailureAnalyzer/
@@ -164,7 +164,7 @@ FailureAnalyzer/
 
 ---
 
-## 🔧 CLI Options
+## CLI Options
 
 ### Required (choose one)
 - `--trx <path>` - Path to TRX test results file
@@ -192,7 +192,7 @@ FailureAnalyzer/
 
 ---
 
-## 🎯 Use Cases
+## Use Cases
 
 ### 1. Daily Test Failure Triage
 **Before:** Engineers manually review 10-20 failed tests each morning  
