@@ -24,3 +24,10 @@ report_log
 5. RAG Database Cache
 
 vector_store.json
+
+# 6. Configuration Files with Secrets
+
+appsettings.json
+.rag/
+.ado-downloads/
+.pipeline/
