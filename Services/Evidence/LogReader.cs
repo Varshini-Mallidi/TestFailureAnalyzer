@@ -310,22 +310,33 @@ public class LogReaderV2
             try
             {
                 var lines = File.ReadAllLines(file);
-                var testMentionIndices = new List<int>();
 
-                // Find all lines mentioning the test
+                // Find test boundaries: "Initializing test {TestName}"
+                int testStart = -1;
+                int testEnd = lines.Length - 1; // Default to end of file
+
                 for (int i = 0; i < lines.Length; i++)
                 {
-                    if (lines[i].Contains(testName, StringComparison.OrdinalIgnoreCase))
-                        testMentionIndices.Add(i);
+                    // Look for "Initializing test {TestName}" pattern
+                    if (lines[i].Contains("Initializing test", StringComparison.OrdinalIgnoreCase) &&
+                        lines[i].Contains(testName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        testStart = i;
+                    }
+                    // Look for the NEXT test initialization to mark the end boundary
+                    else if (testStart >= 0 && 
+                             lines[i].Contains("Initializing test", StringComparison.OrdinalIgnoreCase) &&
+                             !lines[i].Contains(testName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        testEnd = i - 1; // End just before the next test starts
+                        break;
+                    }
                 }
 
-                // Extract context windows around test mentions
-                foreach (var index in testMentionIndices)
+                // If we found the test start, extract all lines between boundaries
+                if (testStart >= 0)
                 {
-                    int start = Math.Max(0, index - contextLines);
-                    int end = Math.Min(lines.Length - 1, index + contextLines);
-
-                    for (int i = start; i <= end; i++)
+                    for (int i = testStart; i <= testEnd; i++)
                     {
                         var entry = ParseLogEntry(lines[i], file, i + 1);
 
@@ -338,6 +349,8 @@ public class LogReaderV2
 
                         entries.Add(entry);
                     }
+
+                    Console.WriteLine($"  [LogReader] DEBUG: Extracted lines {testStart + 1} to {testEnd + 1} for test '{testName}' from {Path.GetFileName(file)}");
                 }
             }
             catch (Exception ex)

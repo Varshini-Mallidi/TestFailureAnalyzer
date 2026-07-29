@@ -58,6 +58,65 @@ public class LocatorDefinitionFinder
     }
 
     /// <summary>
+    /// Extracts the actual value/initializer from a property definition.
+    /// Example: "MainWindow_Ribbon_ToolbarPane => new("_MainWindow_Toolbars_Dock_Area_Top")" 
+    ///          returns "_MainWindow_Toolbars_Dock_Area_Top"
+    /// </summary>
+    public static string? ExtractPropertyValue(string propertyCode, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(propertyCode) || string.IsNullOrWhiteSpace(propertyName))
+            return null;
+
+        // Pattern 1: Property with expression body and string literal
+        // Example: public static Locator MainWindow_Ribbon_ToolbarPane => new("_MainWindow_Toolbars_Dock_Area_Top");
+        var expressionBodyMatch = Regex.Match(propertyCode, 
+            @$"{Regex.Escape(propertyName)}\s*=>\s*new\s*\(\s*""([^""]+)""");
+        if (expressionBodyMatch.Success)
+            return expressionBodyMatch.Groups[1].Value;
+
+        // Pattern 2: Field/property with initializer
+        // Example: private string _windowId = "MainWindow";
+        var initializerMatch = Regex.Match(propertyCode,
+            @$"{Regex.Escape(propertyName)}\s*=\s*""([^""]+)""");
+        if (initializerMatch.Success)
+            return initializerMatch.Groups[1].Value;
+
+        // Pattern 3: Property with getter containing literal
+        // Example: public string Id { get => "_MainWindow_Toolbars_Dock_Area_Top"; }
+        var getterMatch = Regex.Match(propertyCode,
+            @"get\s*=>\s*""([^""]+)""");
+        if (getterMatch.Success)
+            return getterMatch.Groups[1].Value;
+
+        return null;
+    }
+
+    /// <summary>
+    /// Finds locator definitions and extracts their AutomationId/Name values.
+    /// Returns a dictionary of property names to their actual string values.
+    /// </summary>
+    public Dictionary<string, string> FindDefinitionValues(List<string> propertyNames)
+    {
+        var results = new Dictionary<string, string>();
+
+        foreach (var propertyName in propertyNames)
+        {
+            var definitions = FindDefinitions(propertyName);
+            foreach (var chunk in definitions)
+            {
+                var value = ExtractPropertyValue(chunk.Content, propertyName);
+                if (value != null && !results.ContainsKey(propertyName))
+                {
+                    results[propertyName] = value;
+                    break;  // Found the value, move to next property
+                }
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
     /// Extracts potential locator/property names from a failing statement.
     /// Example: "_contextPane.FindFirstDescendant(...)" -> "_contextPane"
     /// Example: "cmdWindow.EnterText(...)" -> "cmdWindow"

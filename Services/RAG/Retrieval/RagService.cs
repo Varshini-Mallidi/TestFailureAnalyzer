@@ -847,6 +847,13 @@ public class RagService
             var potentialLocators = LocatorDefinitionFinder.ExtractPotentialLocators(failingSnippet.Content);
             Console.WriteLine($"  [RAG]   Found {potentialLocators.Count} potential locators in failing statement: {string.Join(", ", potentialLocators.Take(3))}");
 
+            // Try to extract actual locator values
+            var locatorValues = locatorFinder.FindDefinitionValues(potentialLocators.Take(5).ToList());
+            if (locatorValues.Any())
+            {
+                Console.WriteLine($"  [RAG]   📍 Resolved locator values: {string.Join(", ", locatorValues.Select(kv => $"{kv.Key}=\"{kv.Value}\"").Take(3))}");
+            }
+
             foreach (var locatorName in potentialLocators.Take(3))  // Limit to top 3
             {
                 // Try to find the locator definition in the same file first
@@ -858,7 +865,8 @@ public class RagService
 
                 if (locatorSnippet != null)
                 {
-                    Console.WriteLine($"  [RAG]   ✓ Found locator definition: {locatorName}");
+                    var locatorValue = locatorValues.ContainsKey(locatorName) ? $" = \"{locatorValues[locatorName]}\"" : "";
+                    Console.WriteLine($"  [RAG]   ✓ Found locator definition: {locatorName}{locatorValue}");
                     snippets.Add(locatorSnippet);
                 }
                 else
@@ -868,7 +876,8 @@ public class RagService
                     if (matchingChunks.Any())
                     {
                         var chunk = matchingChunks.First();
-                        Console.WriteLine($"  [RAG]   ✓ Found locator definition in indexed chunks: {locatorName} ({Path.GetFileName(chunk.SourcePath)})");
+                        var locatorValue = locatorValues.ContainsKey(locatorName) ? $" = \"{locatorValues[locatorName]}\"" : "";
+                        Console.WriteLine($"  [RAG]   ✓ Found locator definition in indexed chunks: {locatorName}{locatorValue} ({Path.GetFileName(chunk.SourcePath)})");
 
                         snippets.Add(new Models.DebugSnippet
                         {
@@ -879,7 +888,7 @@ public class RagService
                             EndLine = chunk.EndLine,
                             Content = chunk.Content,
                             Category = "Locator Definition",
-                            Reason = $"Referenced by failing statement: {locatorName}"
+                            Reason = $"Referenced by failing statement: {locatorName}{locatorValue}"
                         });
                     }
                 }
@@ -931,6 +940,74 @@ public class RagService
                 {
                     Console.WriteLine($"  [RAG]   ✓ Extracted calling test context from {testSnippet.FileName}:{testSnippet.FocusLine}");
                     snippets.Add(testSnippet);
+                }
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────────────
+        // 5. CONSTRUCTOR CALL CHAIN (if failure occurred during initialization)
+        // ──────────────────────────────────────────────────────────────────────
+        if (StackTraceParser.IsCalledFromConstructor(failure.StackTrace))
+        {
+            Console.WriteLine($"  [RAG]   🔧 Failure occurred during constructor call - tracing initialization chain...");
+            var constructorChain = StackTraceParser.GetConstructorChain(failure.StackTrace);
+
+            foreach (var ctorFrame in constructorChain.Take(3))  // Limit to 3 constructor frames
+            {
+                if (ctorFrame.FilePath != null && ctorFrame.LineNumber != null)
+                {
+                    // Skip if we already have this snippet
+                    if (snippets.Any(s => s.FilePath == ctorFrame.FilePath && 
+                                         Math.Abs((s.FocusLine ?? 0) - ctorFrame.LineNumber.Value) < 10))
+                        continue;
+
+                    var ctorSnippet = extractor.ExtractSnippet(
+                        ctorFrame.FilePath,
+                        ctorFrame.LineNumber.Value,
+                        contextLines: 8,
+                        category: ctorFrame.MethodName == "ctor" ? "Constructor" : "Constructor Caller",
+                        reason: $"Part of initialization chain for {failingFrame.ClassName}");
+
+                    if (ctorSnippet != null)
+                    {
+                        Console.WriteLine($"  [RAG]   ✓ Extracted constructor context: {ctorSnippet.FileName}:{ctorSnippet.FocusLine} in {ctorFrame.MethodName}()");
+                        snippets.Add(ctorSnippet);
+                    }
+                }
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────────────────
+        // 6. HELPER/WRAPPER METHODS (window-matching, validation helpers, etc.)
+        // ──────────────────────────────────────────────────────────────────────
+        var helperMethods = StackTraceParser.GetHelperMethodCalls(failure.StackTrace, maxCount: 3);
+        if (helperMethods.Any())
+        {
+            Console.WriteLine($"  [RAG]   🔍 Found {helperMethods.Count} helper method(s) in stack trace");
+
+            foreach (var helperFrame in helperMethods)
+            {
+                // Skip if we already have this context
+                if (snippets.Any(s => s.FilePath == helperFrame.FilePath && 
+                                     Math.Abs((s.FocusLine ?? 0) - (helperFrame.LineNumber ?? 0)) < 10))
+                    continue;
+
+                if (helperFrame.FilePath != null && helperFrame.LineNumber != null)
+                {
+                    // Try to get the full method body, not just the line
+                    var helperMethod = extractor.ExtractMethod(
+                        helperFrame.FilePath,
+                        helperFrame.MethodName,
+                        maxLines: 25,
+                        category: "Helper Method",
+                        reason: $"Wrapper/utility method in call chain: {helperFrame.MethodName}()",
+                        lineHint: helperFrame.LineNumber);
+
+                    if (helperMethod != null)
+                    {
+                        Console.WriteLine($"  [RAG]   ✓ Extracted helper method: {helperMethod.MethodName}() from {helperMethod.FileName}");
+                        snippets.Add(helperMethod);
+                    }
                 }
             }
         }

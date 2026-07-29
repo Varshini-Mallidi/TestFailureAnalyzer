@@ -121,6 +121,85 @@ public static class StackTraceParser
     }
 
     /// <summary>
+    /// Checks if the failing frame is called from a constructor.
+    /// This helps identify initialization failures vs runtime failures.
+    /// </summary>
+    public static bool IsCalledFromConstructor(string stackTrace)
+    {
+        var frames = ParseStackTrace(stackTrace);
+        // Check if any frame in the stack is a constructor (.ctor)
+        return frames.Any(f => f.MethodName.Equals("ctor", StringComparison.OrdinalIgnoreCase) || 
+                               f.MethodName.Equals("cctor", StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Gets the constructor call chain from innermost to outermost.
+    /// Returns frames that are constructors or called directly from constructors.
+    /// </summary>
+    public static List<StackFrame> GetConstructorChain(string stackTrace)
+    {
+        var frames = ParseStackTrace(stackTrace);
+        var constructorChain = new List<StackFrame>();
+
+        bool inConstructorContext = false;
+        foreach (var frame in frames)
+        {
+            // Mark when we enter constructor context
+            if (frame.MethodName.Equals("ctor", StringComparison.OrdinalIgnoreCase) || 
+                frame.MethodName.Equals("cctor", StringComparison.OrdinalIgnoreCase))
+            {
+                inConstructorContext = true;
+                if (frame.HasFileInfo)
+                    constructorChain.Add(frame);
+            }
+            // Include methods called from constructors (until we exit constructor context)
+            else if (inConstructorContext && frame.HasFileInfo)
+            {
+                constructorChain.Add(frame);
+                // Stop after we've collected 2-3 frames past the constructor
+                if (constructorChain.Count >= 5)
+                    break;
+            }
+        }
+
+        return constructorChain;
+    }
+
+    /// <summary>
+    /// Extracts helper/wrapper method calls from the stack trace.
+    /// Returns frames that are NOT in test assemblies or framework code.
+    /// Useful for finding window-matching logic, validation helpers, etc.
+    /// </summary>
+    public static List<StackFrame> GetHelperMethodCalls(string stackTrace, int maxCount = 5)
+    {
+        var frames = ParseStackTrace(stackTrace);
+        var helpers = new List<StackFrame>();
+
+        // Skip framework and test method frames
+        var frameworkPrefixes = new[] { "System.", "Microsoft.", "UTA.Desktop.Waits", "FlaUI." };
+        var testMethodPatterns = new[] { "TestMethod", "Test_", "_Test" };
+
+        foreach (var frame in frames.Where(f => f.HasFileInfo))
+        {
+            // Skip framework code
+            if (frameworkPrefixes.Any(prefix => frame.FullMethod.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            // Skip test methods (they're already in context)
+            if (testMethodPatterns.Any(pattern => frame.MethodName.Contains(pattern, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            // Include helper methods
+            helpers.Add(frame);
+
+            if (helpers.Count >= maxCount)
+                break;
+        }
+
+        return helpers;
+    }
+
+    /// <summary>
     /// Extracts the class name from a fully qualified method name.
     /// Example: "Aveva.Tests.Pages.LoginPage" (without method) -> "LoginPage"
     /// Handles constructors: "Aveva.Tests.Admin.AdminApplication" (before ..ctor) -> "AdminApplication"
