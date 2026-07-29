@@ -211,3 +211,12 @@ FailureAnalyzer/
 **After:** Track classification trends (script vs app vs environment)
 
 ---
+
+### Future Enhancements
+- **CI/CD Pipeline Automation** - Run analyzer automatically after each pipeline test run with results posted as build artifacts
+- **Enhanced Azure DevOps Integration** - Post analysis results as PR comments and work item updates
+- **Cross-Failure Pattern Detection** - Identify shared root causes across multiple failing tests in the same run
+- **Test Execution Video Analysis** - Extract failure evidence from pipeline recordings
+- **Flaky Test Detection** - Distinguish intermittent infrastructure failures from genuine defects using historical analysis
+
+---
